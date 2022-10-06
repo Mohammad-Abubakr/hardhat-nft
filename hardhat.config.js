@@ -1,10 +1,10 @@
-require("@nomiclabs/hardhat-waffle")
-require("@nomiclabs/hardhat-etherscan")
-require("hardhat-deploy")
-require("solidity-coverage")
-require("hardhat-gas-reporter")
-require("hardhat-contract-sizer")
-require("dotenv").config()
+require('@nomiclabs/hardhat-waffle')
+require('@nomiclabs/hardhat-etherscan')
+require('hardhat-deploy')
+require('solidity-coverage')
+require('hardhat-gas-reporter')
+require('hardhat-contract-sizer')
+require('dotenv').config()
 
 const GOERLI_RPC_URL = process.env.GOERLI_RPC_URL
 const PRIVATE_KEY = process.env.PRIVATE_KEY
@@ -12,8 +12,16 @@ const ETHER_SCAN_API = process.env.ETHERSCAN_API
 const CMC_API = process.env.CMC_API
 
 module.exports = {
-  solidity: "0.8.17",
-  defaultNetwork: "hardhat",
+  solidity: {
+    compilers: [
+      { version: '0.8.9' },
+      { version: '0.4.19' },
+      { version: '0.6.12' },
+      { version: '0.6.6' },
+      { version: '0.6.0' },
+    ],
+  },
+  defaultNetwork: 'hardhat',
   networks: {
     hardhat: {
       chainId: 31337,
@@ -25,7 +33,7 @@ module.exports = {
       blockConfirmations: 1,
     },
     localhost: {
-      url: "http://127.0.0.1:8545/",
+      url: 'http://127.0.0.1:8545/',
       chainId: 31337,
     },
   },
@@ -34,8 +42,8 @@ module.exports = {
   },
   gasReporter: {
     enabled: false,
-    outputFile: "gas-report.txt",
-    currency: "USD",
+    outputFile: 'gas-report.txt',
+    currency: 'USD',
     noColors: true,
     coinmarketcap: CMC_API,
   },

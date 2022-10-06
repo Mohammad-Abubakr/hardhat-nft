@@ -1,19 +1,18 @@
 const { network } = require('hardhat')
-const { etherscan } = require('../hardhat.config')
-const { developmentChains, networkConfig } = require('../helper-hardhat-config')
+const { networkConfig, developmentChains } = require('../helper-hardhat-config')
 const { verify } = require('../utils/verify')
 const {
   storeImages,
   storeTokenUriMetadata,
 } = require('../utils/uploadToPinata')
 
-let tokenUris = [
-  'ipfs://QmPKBw33R7N6iKqSXfLQSv6Edt4gJjybajbcbpeGhpWPmE',
-  'ipfs://QmdtEZbjEpa66W6rDWpRYXRQBeML8waVb7DP6AWUnG4FRh',
-  'ipfs://QmUxbiiFBjZCqBm8bmFZWe4hLSUnagKKnQ8zBmi1h9dmT2',
-]
-
 const FUND_AMOUNT = '1000000000000000000000'
+const imagesLocation = './images/ipfs_nft/'
+let tokenUris = [
+  'ipfs://QmaVkBn2tKmjbhphU7eyztbvSQU5EXDdqRyXZtRhSGgJGo',
+  'ipfs://QmYQC5aGZu2PTH8XzbJrbDnvhj3gVs7ya33H9mqUNvST3d',
+  'ipfs://QmZYmH5iDbD6v3U2ixoVAjioSzvWJszDzYdbeCLquGSpVm',
+]
 
 const metadataTemplate = {
   name: '',
@@ -31,74 +30,65 @@ module.exports = async ({ getNamedAccounts, deployments }) => {
   const { deploy, log } = deployments
   const { deployer } = await getNamedAccounts()
   const chainId = network.config.chainId
-  const imageLocation = './images/ipfs_nft'
-  let vrfCoordinatorAddress, subId
+  let vrfCoordinatorV2Address, subscriptionId
 
   if (process.env.UPLOAD_TO_PINATA == 'true') {
     tokenUris = await handleTokenUris()
   }
 
-  if (developmentChains.includes(network.name)) {
+  if (chainId == 31337) {
     const vrfCoordinatorV2Mock = await ethers.getContract(
       'VRFCoordinatorV2Mock'
     )
-    vrfCoordinatorAddress = vrfCoordinatorV2Mock.address
-    const tx = await vrfCoordinatorV2Mock.createSubscription()
-    const txReceipt = await tx.wait(1)
-    subId = txReceipt.events[0].args.subId
-    await vrfCoordinatorV2Mock.fundSubscription(subId, FUND_AMOUNT)
+    vrfCoordinatorV2Address = vrfCoordinatorV2Mock.address
+    const transactionResponse = await vrfCoordinatorV2Mock.createSubscription()
+    const transactionReceipt = await transactionResponse.wait()
+    subscriptionId = transactionReceipt.events[0].args.subId
+    await vrfCoordinatorV2Mock.fundSubscription(subscriptionId, FUND_AMOUNT)
   } else {
-    vrfCoordinatorAddress = networkConfig[chainId].vrfCoordinatorV2
-    subId = networkConfig[chainId].subscriptionId
+    vrfCoordinatorV2Address = networkConfig[chainId].vrfCoordinatorV2
+    subscriptionId = networkConfig[chainId].subscriptionId
   }
 
-  async function handleTokenUris() {
-    tokenUris = []
-    const { responses: imageUploadResponses, files } = await storeImages(
-      imageLocation
-    )
-    for (imageUploadResponseIndex in imageUploadResponses) {
-      let tokenUriMetadata = { ...metadataTemplate }
-      tokenUriMetadata.name = files[imageUploadResponseIndex].replace(
-        '.png',
-        ''
-      )
-      tokenUriMetadata.description = `A new ${tokenUriMetadata.name}`
-      tokenUriMetadata.image = `ipfs://${imageUploadResponses[imageUploadResponseIndex].IpfsHash}`
-      console.log(`Uploading ${tokenUriMetadata.name}...`)
-      const metadataUploadResponse = await storeTokenUriMetadata(
-        tokenUriMetadata
-      )
-      tokenUris.push(`ipfs://${metadataUploadResponse.IpfsHash}`)
-    }
-    console.log('Token URIs uploaded! They are:')
-    console.log(tokenUris)
-    return tokenUris
-  }
-
-  const args = [
-    vrfCoordinatorAddress,
+  log('----------------------------------------------------')
+  arguments = [
+    vrfCoordinatorV2Address,
+    subscriptionId,
     networkConfig[chainId]['gasLane'],
-    subId,
+    networkConfig[chainId]['mintFee'],
     networkConfig[chainId]['callbackGasLimit'],
     tokenUris,
-    networkConfig[chainId]['mintFee'],
   ]
-
   const randomIpfsNft = await deploy('RandomIPFSNFT', {
     from: deployer,
-    logs: true,
-    args: args,
-    waitConfirmations: 1,
+    args: arguments,
+    log: true,
+    waitConfirmations: network.config.blockConfirmations || 1,
   })
 
-  if (
-    !developmentChains.includes(network.name) &&
-    process.env.ETHERSCAN_API_KEY
-  ) {
+  if (!developmentChains.includes(network.name) && process.env.ETHERSCAN_API) {
     log('Verifying...')
-    await verify(randomIpfsNft.address, args)
+    await verify(randomIpfsNft.address, arguments)
   }
+}
+
+async function handleTokenUris() {
+  tokenUris = []
+  const { responses: imageUploadResponses, files } = await storeImages(
+    imagesLocation
+  )
+  for (imageUploadResponseIndex in imageUploadResponses) {
+    let tokenUriMetadata = { ...metadataTemplate }
+    tokenUriMetadata.name = files[imageUploadResponseIndex].replace('.png', '')
+    tokenUriMetadata.description = `An adorable ${tokenUriMetadata.name} pup!`
+    tokenUriMetadata.image = `ipfs://${imageUploadResponses[imageUploadResponseIndex].IpfsHash}`
+    console.log(`Uploading ${tokenUriMetadata.name}...`)
+    const metadataUploadResponse = await storeTokenUriMetadata(tokenUriMetadata)
+    tokenUris.push(`ipfs://${metadataUploadResponse.IpfsHash}`)
+  }
+  console.log('Token URIs uploaded! They are:')
+  console.log(tokenUris)
+  return tokenUris
 }
 
 module.exports.tags = ['all', 'randomipfs', 'main']

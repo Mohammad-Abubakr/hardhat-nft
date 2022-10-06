@@ -1,63 +1,71 @@
-//SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.8;
 
-pragma solidity ^0.8.0;
-
-import '@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol';
-import '@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol';
 import '@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol';
 import '@openzeppelin/contracts/access/Ownable.sol';
+import '@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol';
+import '@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol';
+import 'hardhat/console.sol';
 
-error RandomIPFSNFT__RangeOutOfBounds();
-error RandomIPFSNFT__TransferFailed();
 error RandomIpfsNft__AlreadyInitialized();
+error RandomIpfsNft__NeedMoreETHSent();
+error RandomIpfsNft__RangeOutOfBounds();
+error RandomIpfsNft__TransferFailed();
 
-contract RandomIPFSNFT is VRFConsumerBaseV2, ERC721URIStorage, Ownable {
-    event NftRequested(uint256 indexed requestId, address requester);
-    event NftMinted(Breed breed, address minter);
-
-    VRFCoordinatorV2Interface private immutable i_vrfCoordiantorV2;
-    mapping(uint256 => address) public requestIdtoOwner;
-    bytes32 private immutable i_gasLane;
-    uint64 private immutable i_subId;
-    uint32 private immutable i_callBackGasLimit;
-    uint16 private constant MINIMUM_CONFIRMATIONS = 3;
-    uint32 private constant NUM_WORDS = 1;
-    string[] internal s_tokenUris;
-    uint256 private immutable i_mintFee;
-
-    uint256 public s_tokenCounter;
-    uint256 internal constant MAX_CHANCE_VALUE = 100;
-    bool private s_initialized;
+contract RandomIPFSNFT is ERC721URIStorage, VRFConsumerBaseV2, Ownable {
     enum Breed {
         PUG,
         SHIBA_INU,
         ST_BERNARD
     }
 
+    VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
+    uint64 private immutable i_subscriptionId;
+    bytes32 private immutable i_gasLane;
+    uint32 private immutable i_callbackGasLimit;
+    uint16 private constant REQUEST_CONFIRMATIONS = 3;
+    uint32 private constant NUM_WORDS = 1;
+
+    uint256 private immutable i_mintFee;
+    uint256 private s_tokenCounter;
+    uint256 internal constant MAX_CHANCE_VALUE = 100;
+    string[] internal s_tokenUris;
+    bool private s_initialized;
+
+    mapping(uint256 => address) public s_requestIdToSender;
+
+    event NftRequested(uint256 indexed requestId, address requester);
+    event NftMinted(Breed breed, address minter);
+
     constructor(
         address vrfCoordinatorV2,
+        uint64 subscriptionId,
         bytes32 gasLane,
-        uint64 subId,
-        uint32 callBackGasLimit,
-        string[3] memory tokenUris,
-        uint256 mintFee
+        uint256 mintFee,
+        uint32 callbackGasLimit,
+        string[3] memory tokenUris
     ) VRFConsumerBaseV2(vrfCoordinatorV2) ERC721('Wardell', 'OPAC') {
-        i_vrfCoordiantorV2 = VRFCoordinatorV2Interface(vrfCoordinatorV2);
+        i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2);
         i_gasLane = gasLane;
-        i_subId = subId;
-        i_callBackGasLimit = callBackGasLimit;
+        i_subscriptionId = subscriptionId;
         i_mintFee = mintFee;
+        i_callbackGasLimit = callbackGasLimit;
         _initializeContract(tokenUris);
     }
 
     function requestNFT() public payable returns (uint256 requestId) {
-        requestId = i_vrfCoordiantorV2.requestRandomWords(
+        if (msg.value < i_mintFee) {
+            revert RandomIpfsNft__NeedMoreETHSent();
+        }
+        requestId = i_vrfCoordinator.requestRandomWords(
             i_gasLane,
-            i_subId,
-            MINIMUM_CONFIRMATIONS,
-            i_callBackGasLimit,
+            i_subscriptionId,
+            REQUEST_CONFIRMATIONS,
+            i_callbackGasLimit,
             NUM_WORDS
         );
+
+        s_requestIdToSender[requestId] = msg.sender;
         emit NftRequested(requestId, msg.sender);
     }
 
@@ -65,18 +73,26 @@ contract RandomIPFSNFT is VRFConsumerBaseV2, ERC721URIStorage, Ownable {
         internal
         override
     {
-        address owner = requestIdtoOwner[requestId];
-        uint256 tokenId = s_tokenCounter;
+        address owner = s_requestIdToSender[requestId];
+        uint256 newItemId = s_tokenCounter;
         s_tokenCounter = s_tokenCounter + 1;
         uint256 moddedRng = randomWords[0] % MAX_CHANCE_VALUE;
         Breed breed = getBreedFromModdedRng(moddedRng);
-        _safeMint(owner, tokenId);
-        _setTokenURI(tokenId, s_tokenUris[uint256(breed)]);
+        _safeMint(owner, newItemId);
+        _setTokenURI(newItemId, s_tokenUris[uint256(breed)]);
         emit NftMinted(breed, owner);
     }
 
     function getChanceArray() public pure returns (uint256[3] memory) {
         return [10, 40, MAX_CHANCE_VALUE];
+    }
+
+    function _initializeContract(string[3] memory dogTokenUris) private {
+        if (s_initialized) {
+            revert RandomIpfsNft__AlreadyInitialized();
+        }
+        s_tokenUris = dogTokenUris;
+        s_initialized = true;
     }
 
     function getBreedFromModdedRng(uint256 moddedRng)
@@ -92,22 +108,14 @@ contract RandomIPFSNFT is VRFConsumerBaseV2, ERC721URIStorage, Ownable {
             }
             cumulativeSum = chanceArray[i];
         }
-        revert RandomIPFSNFT__RangeOutOfBounds();
-    }
-
-    function _initializeContract(string[3] memory dogTokenUris) private {
-        if (s_initialized) {
-            revert RandomIpfsNft__AlreadyInitialized();
-        }
-        s_tokenUris = dogTokenUris;
-        s_initialized = true;
+        revert RandomIpfsNft__RangeOutOfBounds();
     }
 
     function withdraw() public onlyOwner {
         uint256 amount = address(this).balance;
         (bool success, ) = payable(msg.sender).call{value: amount}('');
         if (!success) {
-            revert RandomIPFSNFT__TransferFailed();
+            revert RandomIpfsNft__TransferFailed();
         }
     }
 
@@ -115,15 +123,15 @@ contract RandomIPFSNFT is VRFConsumerBaseV2, ERC721URIStorage, Ownable {
         return i_mintFee;
     }
 
-    function getTokenUris(uint256 index) public view returns (string memory) {
+    function tokenUris(uint256 index) public view returns (string memory) {
         return s_tokenUris[index];
-    }
-
-    function getTokenCounter() public view returns (uint256) {
-        return s_tokenCounter;
     }
 
     function getInitialized() public view returns (bool) {
         return s_initialized;
+    }
+
+    function getTokenCounter() public view returns (uint256) {
+        return s_tokenCounter;
     }
 }

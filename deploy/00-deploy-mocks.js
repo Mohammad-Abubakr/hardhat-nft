@@ -15,21 +15,13 @@ module.exports = async ({ getNamedAccounts, deployments }) => {
       log: true,
       args: [BASE_FEE, GAS_PRICE_LINK],
     })
-    // await deploy('MockV3Aggregator', {
-    //   from: deployer,
-    //   log: true,
-    //   args: [DECIMALS, INITIAL_ANSWER],
-    // })
+    await deploy('MockV3Aggregator', {
+      from: deployer,
+      log: true,
+      args: [DECIMALS, INITIAL_ANSWER],
+    })
 
     log('Mocks Deployed!')
-    log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
-    log(
-      "You are deploying to a local network, you'll need a local network running to interact"
-    )
-    log(
-      'Please run `yarn hardhat console --network localhost` to interact with the deployed smart contracts!'
-    )
-    log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
   }
 }
 module.exports.tags = ['all', 'mocks', 'main']
